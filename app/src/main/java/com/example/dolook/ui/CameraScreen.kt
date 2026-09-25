@@ -16,6 +16,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -44,6 +45,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.example.dolook.pose.PoseLandmarkerHelper
+import com.example.dolook.pose.PosePoint
+import com.example.dolook.pose.exercise.EmptyExerciseState
+import com.example.dolook.pose.exercise.ExerciseDetector
+import com.example.dolook.pose.exercise.ExerciseState
+import com.example.dolook.pose.exercise.JumpingJackDetector
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -110,6 +116,10 @@ private fun PoseCameraContent() {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
 
+    // 以通用接口持有检测器，后续接入新动作时 UI 层无需改动。
+    val detector: ExerciseDetector = remember { JumpingJackDetector() }
+    var exerciseState by remember { mutableStateOf<ExerciseState>(EmptyExerciseState) }
+
     // CPU delegate 允许在主线程创建、后台线程推理；创建失败会在 onError 回调。
     val helper = remember {
         PoseLandmarkerHelper(
@@ -124,6 +134,14 @@ private fun PoseCameraContent() {
                 ) {
                     mainExecutor.execute {
                         frame = PoseFrame(result, inputWidth, inputHeight, inferenceTimeMs)
+                        val landmarks = result.landmarks().firstOrNull()
+                        val points = landmarks?.map {
+                            PosePoint(it.x(), it.y(), it.visibility().orElse(1f))
+                        }
+                        exerciseState = detector.update(
+                            points = points ?: emptyList(),
+                            timestampMs = System.currentTimeMillis(),
+                        )
                     }
                 }
 
@@ -191,25 +209,39 @@ private fun PoseCameraContent() {
 
         StatusBar(
             frame = frame,
+            exerciseName = detector.name,
+            exerciseState = exerciseState,
             errorMessage = errorMessage,
             cameraLabel = if (lensFacing == CameraSelector.LENS_FACING_FRONT) "前置" else "后置",
             modifier = Modifier.align(Alignment.TopStart),
         )
 
-        FilledTonalButton(
-            onClick = {
-                lensFacing = if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
-                    CameraSelector.LENS_FACING_BACK
-                } else {
-                    CameraSelector.LENS_FACING_FRONT
-                }
-            },
+        Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
                 .padding(bottom = 40.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("切换摄像头")
+            FilledTonalButton(
+                onClick = {
+                    detector.reset()
+                    exerciseState = EmptyExerciseState
+                },
+            ) {
+                Text("重置计数")
+            }
+            FilledTonalButton(
+                onClick = {
+                    lensFacing = if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
+                        CameraSelector.LENS_FACING_BACK
+                    } else {
+                        CameraSelector.LENS_FACING_FRONT
+                    }
+                },
+            ) {
+                Text("切换摄像头")
+            }
         }
     }
 }
@@ -217,6 +249,8 @@ private fun PoseCameraContent() {
 @Composable
 private fun StatusBar(
     frame: PoseFrame?,
+    exerciseName: String,
+    exerciseState: ExerciseState,
     errorMessage: String?,
     cameraLabel: String,
     modifier: Modifier = Modifier,
@@ -238,19 +272,31 @@ private fun StatusBar(
                 )
             } else {
                 val landmarkCount = frame?.result?.landmarks()?.sumOf { it.size } ?: 0
+                val feedbackColor = if (exerciseState.isActive) {
+                    Color(0xFF7CFF7C)
+                } else {
+                    Color.White.copy(alpha = 0.9f)
+                }
                 Text(
-                    text = "Pose Landmarker · 已就绪 · $cameraLabel",
+                    text = "$exerciseName · ${exerciseState.repetitionCount} 次 · $cameraLabel",
                     color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
-                    text = if (frame == null) {
-                        "正在等待画面…"
-                    } else {
-                        "关键点: $landmarkCount · 推理耗时: ${frame.inferenceTimeMs} ms"
-                    },
-                    color = Color.White.copy(alpha = 0.8f),
+                    text = exerciseState.feedback,
+                    color = feedbackColor,
+                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                val detailText = buildString {
+                    append("关键点: $landmarkCount")
+                    exerciseState.detail?.let { append(" · $it") }
+                    frame?.let { append(" · 推理耗时: ${it.inferenceTimeMs} ms") }
+                }
+                Text(
+                    text = if (frame == null) "正在等待画面…" else detailText,
+                    color = Color.White.copy(alpha = 0.7f),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
