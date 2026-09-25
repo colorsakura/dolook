@@ -20,12 +20,16 @@ import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
  * 当前只暴露 LIVE_STREAM 模式（配合 CameraX 的 [ImageAnalysis] 使用）：
  * 调用 [detectLiveStream] 投递帧后，结果通过 [LandmarkerListener] 异步回调。
  *
- * 注意：MediaPipe 的 Task 必须在创建它的线程上使用。这里统一在 CameraX 的
- * 单线程 analyzer executor 上创建与调用，满足该约束。
+ * 线程约束：MediaPipe 的 Task（尤其 GPU delegate 持有的 EGL 上下文）必须在创建它的
+ * 线程上创建与调用，因此构造与 [detectLiveStream] 都应运行在同一个单线程上
+ * （见 [com.example.dolook.ui.CameraScreen] 中的 analyzer executor）。
+ *
+ * delegate 策略：优先使用 [preferredDelegate]（默认 GPU），若设备不支持 GPU 或初始化
+ * 失败会自动回退 CPU，避免直接不可用；回退结果由 [activeDelegate] 暴露。
  */
 class PoseLandmarkerHelper(
     private val context: Context,
-    private val delegate: Delegate = Delegate.CPU,
+    private val preferredDelegate: Delegate = Delegate.GPU,
     private val modelAssetPath: String = MODEL_POSE_LANDMARKER_FULL,
     private val runningMode: RunningMode = RunningMode.LIVE_STREAM,
     private val minPoseDetectionConfidence: Float = DEFAULT_POSE_DETECTION_CONFIDENCE,
@@ -35,6 +39,10 @@ class PoseLandmarkerHelper(
 ) {
 
     private var poseLandmarker: PoseLandmarker? = null
+
+    /** 实际初始化成功的 delegate；null 表示尚未就绪或 GPU 与 CPU 均失败。 */
+    var activeDelegate: Delegate? = null
+        private set
 
     val isReady: Boolean
         get() = poseLandmarker != null
@@ -49,6 +57,30 @@ class PoseLandmarkerHelper(
     }
 
     private fun setupPoseLandmarker() {
+        // 依次尝试首选 delegate 与 CPU，任一成功即停止。
+        val candidates = listOfNotNull(
+            preferredDelegate,
+            Delegate.CPU.takeIf { it != preferredDelegate },
+        )
+        for (candidate in candidates) {
+            val landmarker = try {
+                createLandmarker(candidate)
+            } catch (t: Throwable) {
+                // GPU delegate 不受支持、模型损坏或 native 库加载失败等都会走到这里。
+                Log.e(TAG, "使用 $candidate delegate 初始化失败，尝试回退", t)
+                continue
+            }
+            poseLandmarker = landmarker
+            activeDelegate = candidate
+            if (candidate != preferredDelegate) {
+                Log.w(TAG, "$preferredDelegate delegate 不可用，已回退到 $candidate")
+            }
+            return
+        }
+        listener?.onError("Pose Landmarker 初始化失败：GPU 与 CPU delegate 均不可用")
+    }
+
+    private fun createLandmarker(delegate: Delegate): PoseLandmarker {
         val baseOptions = BaseOptions.builder()
             .setDelegate(delegate)
             .setModelAssetPath(modelAssetPath)
@@ -67,13 +99,7 @@ class PoseLandmarkerHelper(
                 .setErrorListener(this::onLivestreamError)
         }
 
-        try {
-            poseLandmarker = PoseLandmarker.createFromOptions(context, optionsBuilder.build())
-        } catch (e: Exception) {
-            // GPU delegate 不受支持、模型损坏等情况下会走到这里
-            Log.e(TAG, "Pose Landmarker 初始化失败", e)
-            listener?.onError("Pose Landmarker 初始化失败: ${e.message}")
-        }
+        return PoseLandmarker.createFromOptions(context, optionsBuilder.build())
     }
 
     /**
@@ -118,10 +144,15 @@ class PoseLandmarkerHelper(
         landmarker.detectAsync(BitmapImageBuilder(rotatedBitmap).build(), frameTime)
     }
 
-    /** 释放底层原生资源。之后不能再调用推理接口。 */
+    /**
+     * 释放底层原生资源。之后不能再调用推理接口。
+     *
+     * 必须在创建该 Task 的同一线程上调用，否则 GPU delegate 的 EGL 上下文会崩溃。
+     */
     fun clear() {
         poseLandmarker?.close()
         poseLandmarker = null
+        activeDelegate = null
     }
 
     private fun onLivestreamResult(result: PoseLandmarkerResult, input: MPImage) {

@@ -50,6 +50,7 @@ import com.example.dolook.pose.exercise.EmptyExerciseState
 import com.example.dolook.pose.exercise.ExerciseDetector
 import com.example.dolook.pose.exercise.ExerciseState
 import com.example.dolook.pose.exercise.JumpingJackDetector
+import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -120,36 +121,41 @@ private fun PoseCameraContent() {
     val detector: ExerciseDetector = remember { JumpingJackDetector() }
     var exerciseState by remember { mutableStateOf<ExerciseState>(EmptyExerciseState) }
 
-    // CPU delegate 允许在主线程创建、后台线程推理；创建失败会在 onError 回调。
-    val helper = remember {
-        PoseLandmarkerHelper(
-            context = context.applicationContext,
-            modelAssetPath = PoseLandmarkerHelper.MODEL_POSE_LANDMARKER_FULL,
-            listener = object : PoseLandmarkerHelper.LandmarkerListener {
-                override fun onResults(
-                    result: PoseLandmarkerResult,
-                    inputWidth: Int,
-                    inputHeight: Int,
-                    inferenceTimeMs: Long,
-                ) {
-                    mainExecutor.execute {
-                        frame = PoseFrame(result, inputWidth, inputHeight, inferenceTimeMs)
-                        val landmarks = result.landmarks().firstOrNull()
-                        val points = landmarks?.map {
-                            PosePoint(it.x(), it.y(), it.visibility().orElse(1f))
-                        }
-                        exerciseState = detector.update(
-                            points = points ?: emptyList(),
-                            timestampMs = System.currentTimeMillis(),
-                        )
-                    }
-                }
+    // GPU delegate 要求 Task 在创建它的线程上使用，因此把 helper 的构造也放到
+    // analyzer executor 上，与 detectLiveStream() 保持同一线程。
+    var helper by remember { mutableStateOf<PoseLandmarkerHelper?>(null) }
 
-                override fun onError(message: String) {
-                    mainExecutor.execute { errorMessage = message }
-                }
-            },
-        )
+    LaunchedEffect(Unit) {
+        helper = analysisExecutor.runAsync {
+            PoseLandmarkerHelper(
+                context = context.applicationContext,
+                modelAssetPath = PoseLandmarkerHelper.MODEL_POSE_LANDMARKER_FULL,
+                listener = object : PoseLandmarkerHelper.LandmarkerListener {
+                    override fun onResults(
+                        result: PoseLandmarkerResult,
+                        inputWidth: Int,
+                        inputHeight: Int,
+                        inferenceTimeMs: Long,
+                    ) {
+                        mainExecutor.execute {
+                            frame = PoseFrame(result, inputWidth, inputHeight, inferenceTimeMs)
+                            val landmarks = result.landmarks().firstOrNull()
+                            val points = landmarks?.map {
+                                PosePoint(it.x(), it.y(), it.visibility().orElse(1f))
+                            }
+                            exerciseState = detector.update(
+                                points = points ?: emptyList(),
+                                timestampMs = System.currentTimeMillis(),
+                            )
+                        }
+                    }
+
+                    override fun onError(message: String) {
+                        mainExecutor.execute { errorMessage = message }
+                    }
+                },
+            )
+        }
     }
 
     val previewView = remember {
@@ -160,7 +166,9 @@ private fun PoseCameraContent() {
         }
     }
 
-    LaunchedEffect(lifecycleOwner, previewView, lensFacing) {
+    LaunchedEffect(lifecycleOwner, previewView, lensFacing, helper) {
+        // 等 helper 在 analyzer 线程上建好后再绑相机，避免首帧空跑。
+        val currentHelper = helper ?: return@LaunchedEffect
         // 切换摄像头时先清空上一路的结果，避免骨架短暂错位。
         frame = null
         runCatching {
@@ -169,7 +177,7 @@ private fun PoseCameraContent() {
                 lifecycleOwner = lifecycleOwner,
                 previewView = previewView,
                 analysisExecutor = analysisExecutor,
-                helper = helper,
+                helper = currentHelper,
                 lensFacing = lensFacing,
             )
         }.onFailure { error ->
@@ -179,7 +187,8 @@ private fun PoseCameraContent() {
 
     DisposableEffect(Unit) {
         onDispose {
-            helper.clear()
+            // clear() 必须与创建/推理同线程；shutdown() 会等待已提交任务完成。
+            analysisExecutor.execute { helper?.clear() }
             analysisExecutor.shutdown()
         }
     }
@@ -213,6 +222,7 @@ private fun PoseCameraContent() {
             exerciseState = exerciseState,
             errorMessage = errorMessage,
             cameraLabel = if (lensFacing == CameraSelector.LENS_FACING_FRONT) "前置" else "后置",
+            delegateLabel = helper?.activeDelegate?.let(::delegateLabel) ?: "…",
             modifier = Modifier.align(Alignment.TopStart),
         )
 
@@ -253,6 +263,7 @@ private fun StatusBar(
     exerciseState: ExerciseState,
     errorMessage: String?,
     cameraLabel: String,
+    delegateLabel: String,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -278,7 +289,7 @@ private fun StatusBar(
                     Color.White.copy(alpha = 0.9f)
                 }
                 Text(
-                    text = "$exerciseName · ${exerciseState.repetitionCount} 次 · $cameraLabel",
+                    text = "$exerciseName · ${exerciseState.repetitionCount} 次 · $cameraLabel · $delegateLabel",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleMedium,
@@ -325,6 +336,27 @@ private fun PermissionRequest(onRequest: () -> Unit) {
         }
     }
 }
+
+private fun delegateLabel(delegate: Delegate): String =
+    when (delegate) {
+        Delegate.GPU -> "GPU"
+        Delegate.CPU -> "CPU"
+        else -> delegate.name
+    }
+
+/** 在指定 [Executor] 上执行 [block] 并挂起等待结果。 */
+private suspend fun <T> Executor.runAsync(block: () -> T): T =
+    suspendCancellableCoroutine { continuation ->
+        execute {
+            val result = runCatching(block)
+            if (continuation.isActive) {
+                result.fold(
+                    onSuccess = { continuation.resume(it) },
+                    onFailure = { continuation.resumeWithException(it) },
+                )
+            }
+        }
+    }
 
 /**
  * 创建并绑定 CameraX 的 [Preview] 与 [ImageAnalysis] 用例。

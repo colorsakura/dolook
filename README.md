@@ -37,6 +37,16 @@ PoseOverlayView.setResults()              // 绘制关键点与骨架
   `PoseLandmarkerHelper` 的 `modelAssetPath` 中切换为 `lite` / `heavy`。
 - 摄像头：底部按钮可在前后摄像头间切换；切前置时对输入做水平镜像，使关键点坐标与预览保持一致。
 
+### 推理加速与线程模型
+
+- **delegate**：默认优先启用 GPU（`Delegate.GPU`），设备不支持或初始化失败时自动回退到 CPU；
+  当前生效的 delegate 会显示在状态栏（`开合跳 · 0 次 · 后置 · GPU`）。
+- **线程约束**：MediaPipe 的 Task（尤其 GPU delegate 的 EGL 上下文）必须在创建它的线程上使用，
+  因此 `PoseLandmarkerHelper` 的构造、`detectLiveStream()` 与 `clear()` 统一在 CameraX 的
+  单线程 analyzer executor 上执行（见 `CameraScreen.kt`）。
+- **回退逻辑**：`PoseLandmarkerHelper.setupPoseLandmarker()` 按「首选 delegate → CPU」顺序尝试，
+  任一成功即停止，两者都失败才通过 `onError` 上报。
+
 ### 模型下载
 
 模型未纳入版本控制之外的分发流程时，可用以下命令重新获取：
