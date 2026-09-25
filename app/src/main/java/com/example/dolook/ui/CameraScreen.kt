@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -96,6 +97,7 @@ private fun PoseCameraContent() {
 
     var frame by remember { mutableStateOf<PoseFrame?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
 
     // CPU delegate 允许在主线程创建、后台线程推理；创建失败会在 onError 回调。
     val helper = remember {
@@ -129,7 +131,9 @@ private fun PoseCameraContent() {
         }
     }
 
-    LaunchedEffect(lifecycleOwner, previewView) {
+    LaunchedEffect(lifecycleOwner, previewView, lensFacing) {
+        // 切换摄像头时先清空上一路的结果，避免骨架短暂错位。
+        frame = null
         runCatching {
             bindCameraUseCases(
                 context = context,
@@ -137,6 +141,7 @@ private fun PoseCameraContent() {
                 previewView = previewView,
                 analysisExecutor = analysisExecutor,
                 helper = helper,
+                lensFacing = lensFacing,
             )
         }.onFailure { error ->
             errorMessage = "相机启动失败: ${error.message}"
@@ -176,8 +181,24 @@ private fun PoseCameraContent() {
         StatusBar(
             frame = frame,
             errorMessage = errorMessage,
+            cameraLabel = if (lensFacing == CameraSelector.LENS_FACING_FRONT) "前置" else "后置",
             modifier = Modifier.align(Alignment.TopStart),
         )
+
+        FilledTonalButton(
+            onClick = {
+                lensFacing = if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
+                    CameraSelector.LENS_FACING_BACK
+                } else {
+                    CameraSelector.LENS_FACING_FRONT
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 40.dp),
+        ) {
+            Text("切换摄像头")
+        }
     }
 }
 
@@ -185,6 +206,7 @@ private fun PoseCameraContent() {
 private fun StatusBar(
     frame: PoseFrame?,
     errorMessage: String?,
+    cameraLabel: String,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -201,7 +223,7 @@ private fun StatusBar(
             } else {
                 val landmarkCount = frame?.result?.landmarks()?.sumOf { it.size } ?: 0
                 Text(
-                    text = "Pose Landmarker · 已就绪",
+                    text = "Pose Landmarker · 已就绪 · $cameraLabel",
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.bodyMedium,
@@ -254,8 +276,14 @@ private suspend fun bindCameraUseCases(
     previewView: PreviewView,
     analysisExecutor: Executor,
     helper: PoseLandmarkerHelper,
+    lensFacing: Int,
 ) {
     val cameraProvider = context.awaitCameraProvider()
+
+    val cameraSelector = CameraSelector.Builder()
+        .requireLensFacing(lensFacing)
+        .build()
+    val isFrontCamera = lensFacing == CameraSelector.LENS_FACING_FRONT
 
     val preview = Preview.Builder()
         .build()
@@ -277,15 +305,15 @@ private suspend fun bindCameraUseCases(
         .build()
         .also { analysis ->
             analysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                // 当前固定使用后置摄像头，无需镜像。
-                helper.detectLiveStream(imageProxy, isFrontCamera = false)
+                // 前置摄像头对输入做水平镜像，使关键点坐标与镜像显示的预览一致。
+                helper.detectLiveStream(imageProxy, isFrontCamera = isFrontCamera)
             }
         }
 
     cameraProvider.unbindAll()
     cameraProvider.bindToLifecycle(
         lifecycleOwner,
-        CameraSelector.DEFAULT_BACK_CAMERA,
+        cameraSelector,
         preview,
         imageAnalysis,
     )
@@ -294,6 +322,7 @@ private suspend fun bindCameraUseCases(
 private suspend fun Context.awaitCameraProvider(): ProcessCameraProvider =
     suspendCancellableCoroutine { continuation ->
         val future = ProcessCameraProvider.getInstance(this)
+        continuation.invokeOnCancellation { future.cancel(true) }
         future.addListener(
             {
                 try {

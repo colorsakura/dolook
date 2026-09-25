@@ -35,7 +35,7 @@ PoseOverlayView.setResults()              // 绘制关键点与骨架
 - `ImageAnalysis`：`STRATEGY_KEEP_ONLY_LATEST` 背压 + `OUTPUT_IMAGE_FORMAT_RGBA_8888`（MediaPipe 要求）。
 - 模型：默认 `pose_landmarker_full.task`（更精准）。可在
   `PoseLandmarkerHelper` 的 `modelAssetPath` 中切换为 `lite` / `heavy`。
-- 摄像头：当前固定后置；前置摄像头时传入 `isFrontCamera = true` 做水平镜像即可。
+- 摄像头：底部按钮可在前后摄像头间切换；切前置时对输入做水平镜像，使关键点坐标与预览保持一致。
 
 ### 模型下载
 
