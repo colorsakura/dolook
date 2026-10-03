@@ -1,17 +1,23 @@
 package com.example.dolook.ui
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,14 +26,17 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -38,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import com.example.dolook.ui.components.pressScale
 import com.example.dolook.ui.theme.DoLookMotion
 import com.example.dolook.ui.theme.LocalReducedMotion
+import kotlinx.coroutines.launch
 
 /** 底部导航栏的目的地。 */
 enum class AppTab(
@@ -52,9 +62,12 @@ enum class AppTab(
 /**
  * DoLook 底部导航栏。
  *
- * 参照 Apple 的「材质与层级」：导航栏是一层浮在内容之上的半透明材质，
- * 用一条极淡的高光边而非硬分割线；选中项用强调色 + 轻微弹性弹起表达，
- * 未选中项保持中性，避免整条 bar 争夺注意力。
+ * 参照 Apple 的「材质与层级」：
+ * - 做成浮在内容之上的半透明胶囊，而不是贴底通栏 —— 内容可以从它四周透出，
+ *   材质厚度由圆角、细高光边与投影共同建立；
+ * - 选中态是一枚会在 tab 间平滑滑动的指示器（共享元素），而不是各画各的，
+ *   位移方向本身就在传达「我从哪里去了哪里」；
+ * - 点击时图标有一次轻微回弹，呼应「被选中」的物理感。
  */
 @Composable
 fun DoLookNavigationBar(
@@ -63,40 +76,93 @@ fun DoLookNavigationBar(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    // 半透明材质：内容从其下方滑过时仍有层次感（此处用 surface 的 alpha 近似）。
-    val material = colors.surface.copy(alpha = 0.92f)
+    // 胶囊半高 = 内容高 / 2 + 上下内边距。圆角取半高，左右两端才是真正的半圆
+    // （若用 percent=50，x/y 半径分别按宽高计算，会变成椭圆角）。
+    val barContentHeight = 52.dp
+    val barVerticalPadding = 6.dp
+    val pillRadius = barContentHeight / 2 + barVerticalPadding
+    val shape = RoundedCornerShape(pillRadius)
 
-    Column(
+    val reduced = LocalReducedMotion.current
+    val scope = rememberCoroutineScope()
+    // 整条栏的回弹：点击任意 tab（无论是否切换）都让胶囊像被按下一样弹一下，
+    // 使导航栏读作一个整体，而不是互不相干的三个按钮。
+    val barScale = remember { Animatable(1f) }
+    val bounceBar: () -> Unit = {
+        if (!reduced) {
+            scope.launch {
+                barScale.snapTo(0.96f)
+                barScale.animateTo(1f, DoLookMotion.momentum())
+            }
+        }
+    }
+
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .background(material)
-            .drawBehind {
-                // 顶边一条渐隐高光，代替 1px 硬边框。
-                val stroke = 0.6.dp.toPx()
-                drawRect(
-                    color = colors.outlineVariant.copy(alpha = 0.6f),
-                    size = size.copy(height = stroke),
-                )
-            }
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Row(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
+                .graphicsLayer {
+                    scaleX = barScale.value
+                    scaleY = barScale.value
+                }
+                .shadow(
+                    elevation = 16.dp,
+                    shape = shape,
+                    ambientColor = Color.Black,
+                    spotColor = Color.Black,
+                ),
+            shape = shape,
+            color = colors.surface.copy(alpha = 0.90f),
+            border = BorderStroke(0.5.dp, colors.outlineVariant.copy(alpha = 0.7f)),
         ) {
-            AppTab.entries.forEach { tab ->
-                NavigationItem(
-                    tab = tab,
-                    selected = tab == selectedTab,
-                    onClick = {
-                        if (tab != selectedTab) {
-                            onTabSelected(tab)
-                        }
-                    },
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(barVerticalPadding),
+            ) {
+                val count = AppTab.entries.size
+                val cellWidth = maxWidth / count
+                val selectedIndex = selectedTab.ordinal
+
+                // 共享指示器：在等宽单元之间平滑滑动。
+                val indicatorOffset by animateDpAsState(
+                    targetValue = cellWidth * selectedIndex,
+                    animationSpec = DoLookMotion.momentum(),
+                    label = "tabIndicatorOffset",
                 )
+
+                Box(
+                    modifier = Modifier
+                        .offset(x = indicatorOffset)
+                        .width(cellWidth)
+                        .height(barContentHeight)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(colors.primary.copy(alpha = 0.14f)),
+                )
+
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    AppTab.entries.forEach { tab ->
+                        NavigationItem(
+                            tab = tab,
+                            selected = tab == selectedTab,
+                            onClick = {
+                                if (tab != selectedTab) {
+                                    onTabSelected(tab)
+                                }
+                                bounceBar()
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(barContentHeight),
+                        )
+                    }
+                }
             }
         }
     }
@@ -107,6 +173,7 @@ private fun NavigationItem(
     tab: AppTab,
     selected: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val reduced = LocalReducedMotion.current
@@ -118,21 +185,25 @@ private fun NavigationItem(
         animationSpec = DoLookMotion.standard(),
         label = "tabTint",
     )
-    // 选中时轻微弹起，呼应「被选中」的物理感；未选中缩小一档。
-    val iconScale by animateFloatAsState(
-        targetValue = if (selected) 1f else 0.9f,
-        animationSpec = if (reduced) DoLookMotion.none() else DoLookMotion.pop(),
-        label = "tabIconScale",
-    )
-    val indicatorAlpha by animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
-        animationSpec = DoLookMotion.standard(),
-        label = "tabIndicator",
-    )
+
+    // 选中瞬间的回弹：先略微收缩再弹出，像被按下去又弹回来。
+    val bounce = remember { Animatable(1f) }
+    LaunchedEffect(selected, reduced) {
+        when {
+            reduced -> bounce.snapTo(1f)
+            selected -> {
+                bounce.snapTo(0.86f)
+                bounce.animateTo(1.12f, DoLookMotion.pop())
+                bounce.animateTo(1f, DoLookMotion.snappy())
+            }
+
+            else -> bounce.animateTo(0.94f, DoLookMotion.standard())
+        }
+    }
 
     Column(
-        modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
+        modifier = modifier
+            .clip(RoundedCornerShape(22.dp))
             .selectable(
                 selected = selected,
                 role = Role.Tab,
@@ -143,36 +214,26 @@ private fun NavigationItem(
                     onClick()
                 },
             )
-            .pressScale(interactionSource = interactionSource, pressedScale = 0.92f)
-            .padding(horizontal = 18.dp, vertical = 6.dp),
+            .pressScale(interactionSource = interactionSource, pressedScale = 0.94f),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp),
+        verticalArrangement = Arrangement.Center,
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            // 选中态底衬：柔和的主色 tint，暗示「当前所在」。
-            Box(
-                modifier = Modifier
-                    .size(width = 64.dp, height = 30.dp)
-                    .graphicsLayer { alpha = indicatorAlpha }
-                    .clip(RoundedCornerShape(15.dp))
-                    .background(colors.primary.copy(alpha = 0.14f)),
-            )
-            Icon(
-                imageVector = tab.icon,
-                contentDescription = tab.label,
-                tint = tint,
-                modifier = Modifier
-                    .size(24.dp)
-                    .graphicsLayer {
-                        scaleX = iconScale
-                        scaleY = iconScale
-                    },
-            )
-        }
+        Icon(
+            imageVector = tab.icon,
+            contentDescription = tab.label,
+            tint = tint,
+            modifier = Modifier
+                .size(23.dp)
+                .graphicsLayer {
+                    scaleX = bounce.value
+                    scaleY = bounce.value
+                },
+        )
         Text(
             text = tab.label,
             style = MaterialTheme.typography.labelSmall,
             color = tint,
+            modifier = Modifier.padding(top = 3.dp),
         )
     }
 }
