@@ -1,0 +1,33 @@
+<svg width="108" height="108" viewBox="0 0 108 108" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="108" height="108" fill="#F5F5F5"/>
+<g clip-path="url(#clip0_0_1)">
+<path d="M108 0H0V108H108V0Z" fill="url(#paint0_linear_0_1)"/>
+<path d="M24 36V24H36" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M72 24H84V36" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M24 72V84H36" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M54 38C56.2091 38 58 36.2091 58 34C58 31.7909 56.2091 30 54 30C51.7909 30 50 31.7909 50 34C50 36.2091 51.7909 38 54 38Z" fill="white"/>
+<path d="M54 41V55" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M54 43L42 49L36 55" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M54 43L66 49L72 55" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M54 55L42 63L38 75" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M54 55L66 63L70 75" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M54 45C55.1046 45 56 44.1046 56 43C56 41.8954 55.1046 41 54 41C52.8954 41 52 41.8954 52 43C52 44.1046 52.8954 45 54 45Z" fill="white"/>
+<path d="M42 51C43.1046 51 44 50.1046 44 49C44 47.8954 43.1046 47 42 47C40.8954 47 40 47.8954 40 49C40 50.1046 40.8954 51 42 51Z" fill="white"/>
+<path d="M66 51C67.1046 51 68 50.1046 68 49C68 47.8954 67.1046 47 66 47C64.8954 47 64 47.8954 64 49C64 50.1046 64.8954 51 66 51Z" fill="white"/>
+<path d="M54 57C55.1046 57 56 56.1046 56 55C56 53.8954 55.1046 53 54 53C52.8954 53 52 53.8954 52 55C52 56.1046 52.8954 57 54 57Z" fill="white"/>
+<path d="M42 65C43.1046 65 44 64.1046 44 63C44 61.8954 43.1046 61 42 61C40.8954 61 40 61.8954 40 63C40 64.1046 40.8954 65 42 65Z" fill="white"/>
+<path d="M66 65C67.1046 65 68 64.1046 68 63C68 61.8954 67.1046 61 66 61C64.8954 61 64 61.8954 64 63C64 64.1046 64.8954 65 66 65Z" fill="white"/>
+<path d="M38 77C39.1046 77 40 76.1046 40 75C40 73.8954 39.1046 73 38 73C36.8954 73 36 73.8954 36 75C36 76.1046 36.8954 77 38 77Z" fill="white"/>
+<path d="M70 77C71.1046 77 72 76.1046 72 75C72 73.8954 71.1046 73 70 73C68.8954 73 68 73.8954 68 75C68 76.1046 68.8954 77 70 77Z" fill="white"/>
+<path d="M68 78L74 84L84 72" stroke="#FFC247" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_1" x1="0" y1="0" x2="108" y2="108" gradientUnits="userSpaceOnUse">
+<stop stop-color="#00E5A8"/>
+<stop offset="1" stop-color="#0066FF"/>
+</linearGradient>
+<clipPath id="clip0_0_1">
+<rect width="108" height="108" fill="white"/>
+</clipPath>
+</defs>
+</svg>

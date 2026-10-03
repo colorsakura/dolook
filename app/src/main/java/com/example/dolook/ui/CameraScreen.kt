@@ -67,7 +67,10 @@ private data class PoseFrame(
 )
 
 @Composable
-fun CameraScreen(modifier: Modifier = Modifier) {
+fun CameraScreen(
+    onExit: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val view = LocalView.current
 
@@ -95,7 +98,7 @@ fun CameraScreen(modifier: Modifier = Modifier) {
 
     Box(modifier = modifier.fillMaxSize()) {
         if (hasCameraPermission) {
-            PoseCameraContent()
+            PoseCameraContent(onExit = onExit)
         } else {
             PermissionRequest(
                 onRequest = { permissionLauncher.launch(Manifest.permission.CAMERA) },
@@ -105,7 +108,7 @@ fun CameraScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun PoseCameraContent() {
+private fun PoseCameraContent(onExit: () -> Unit) {
     val context = LocalContext.current
     // MainActivity 本身即 LifecycleOwner，直接复用可避免额外依赖。
     val lifecycleOwner = context as LifecycleOwner
@@ -233,6 +236,9 @@ private fun PoseCameraContent() {
                 .padding(bottom = 40.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            FilledTonalButton(onClick = onExit) {
+                Text("退出")
+            }
             FilledTonalButton(
                 onClick = {
                     detector.reset()
