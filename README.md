@@ -1,19 +1,19 @@
 # DoLook
 
-DoLook(你做我看) 是一款运动辅助软件，他能监控你的运动过程，指出动作不到位的地方。
+DoLook (你做我看) 是一款运动辅助软件，他能监控你的运动过程，指出动作不到位的地方。
 
 ## 姿态识别 (Pose Landmarker)
 
-App 使用 **CameraX** 采集摄像头帧，交给 **MediaPipe Pose Landmarker** 做端上实时推理，
-并把检测到的 33 个人体关键点绘制在预览画面之上。
+App 使用 **CameraX** 采集摄像头帧，交给 **MediaPipe Pose Landmarker** 做端上实时推理， 并把检测到的 33
+个人体关键点绘制在预览画面之上。
 
 ### 架构
 
-| 文件                             | 职责                                                                                        |
-|--------------------------------|-------------------------------------------------------------------------------------------|
+| 文件                           | 职责                                                                                                      |
+|--------------------------------|-----------------------------------------------------------------------------------------------------------|
 | `pose/PoseLandmarkerHelper.kt` | 封装 MediaPipe `PoseLandmarker`（LIVE_STREAM 模式）：把 CameraX 的 `ImageProxy` 转成 `MPImage` 并异步推理 |
-| `ui/CameraScreen.kt`           | 相机权限、CameraX `Preview` + `ImageAnalysis` 绑定、Compose UI 与状态栏                               |
-| `ui/PoseOverlayView.kt`        | 自定义 `View`，按 FILL_CENTER 规则把归一化关键点映射到屏幕并绘制骨架                                              |
+| `ui/CameraScreen.kt`           | 相机权限、CameraX `Preview` + `ImageAnalysis` 绑定、Compose UI 与状态栏                                   |
+| `ui/PoseOverlayView.kt`        | 自定义 `View`，按 FILL_CENTER 规则把归一化关键点映射到屏幕并绘制骨架                                      |
 
 ### 数据流
 
@@ -39,11 +39,11 @@ PoseOverlayView.setResults()              // 绘制关键点与骨架
 
 ### 推理加速与线程模型
 
-- **delegate**：默认优先启用 GPU（`Delegate.GPU`），设备不支持或初始化失败时自动回退到 CPU；
-  当前生效的 delegate 会显示在状态栏（`开合跳 · 0 次 · 后置 · GPU`）。
-- **线程约束**：MediaPipe 的 Task（尤其 GPU delegate 的 EGL 上下文）必须在创建它的线程上使用，
-  因此 `PoseLandmarkerHelper` 的构造、`detectLiveStream()` 与 `clear()` 统一在 CameraX 的
-  单线程 analyzer executor 上执行（见 `CameraScreen.kt`）。
+- **delegate**：默认优先启用 GPU（`Delegate.GPU`），设备不支持或初始化失败时自动回退到 CPU； 当前生效的
+  delegate 会显示在状态栏（`开合跳 · 0 次 · 后置 · GPU`）。
+- **线程约束**：MediaPipe 的 Task（尤其 GPU delegate 的 EGL 上下文）必须在创建它的线程上使用， 因此
+  `PoseLandmarkerHelper` 的构造、`detectLiveStream()` 与 `clear()` 统一在 CameraX 的 单线程 analyzer
+  executor 上执行（见 `CameraScreen.kt`）。
 - **回退逻辑**：`PoseLandmarkerHelper.setupPoseLandmarker()` 按「首选 delegate → CPU」顺序尝试，
   任一成功即停止，两者都失败才通过 `onError` 上报。
 
@@ -67,22 +67,22 @@ curl -L -o app/src/main/assets/pose_landmarker_lite.task \
 
 ### 判定方法
 
-| 特征               | 计算                 | 说明                    |
-|------------------|--------------------|-----------------------|
-| 腿张开比例 `legRatio` | 双脚踝水平间距 / 肩宽       | 用水平间距而非欧氏距离，消除画面宽高比影响 |
-| 双手上举             | 双腕 y 是否高于同侧肩膀 / 鼻尖 | 判断手臂是否举起              |
+| 特征                  | 计算                           | 说明                                       |
+|-----------------------|--------------------------------|--------------------------------------------|
+| 腿张开比例 `legRatio` | 双脚踝水平间距 / 肩宽          | 用水平间距而非欧氏距离，消除画面宽高比影响 |
+| 双手上举              | 双腕 y 是否高于同侧肩膀 / 鼻尖 | 判断手臂是否举起                           |
 
-状态机：`UNKNOWN/CLOSED → OPEN → CLOSED`，每完成一次「收拢 → 展开 → 收拢」计数 +1。
-采用「连续稳定帧（默认 3）+ 最小相位间隔（默认 200ms）」防抖，避免关键点抖动造成误计数。
+状态机：`UNKNOWN/CLOSED → OPEN → CLOSED`，每完成一次「收拢 → 展开 → 收拢」计数 +1。 采用「连续稳定帧（默认
+3）+ 最小相位间隔（默认 200ms）」防抖，避免关键点抖动造成误计数。
 
 ### 代码位置
 
-| 文件                                            | 职责                         |
-|-----------------------------------------------|----------------------------|
-| `pose/exercise/ExerciseDetector.kt`          | 通用 `ExerciseDetector` / `ExerciseState` 契约 |
-| `pose/exercise/JumpingJackDetector.kt`        | 开合跳实现（纯逻辑状态机，无 Android 依赖） |
-| `pose/PosePoint.kt` / `pose/PoseLandmarks.kt` | 与 MediaPipe 解耦的关键点模型与索引    |
-| `app/src/test/.../JumpingJackDetectorTest.kt` | 9 个单元测试（含接口契约）          |
+| 文件                                          | 职责                                           |
+|-----------------------------------------------|------------------------------------------------|
+| `pose/exercise/ExerciseDetector.kt`           | 通用 `ExerciseDetector` / `ExerciseState` 契约 |
+| `pose/exercise/JumpingJackDetector.kt`        | 开合跳实现（纯逻辑状态机，无 Android 依赖）    |
+| `pose/PosePoint.kt` / `pose/PoseLandmarks.kt` | 与 MediaPipe 解耦的关键点模型与索引            |
+| `app/src/test/.../JumpingJackDetectorTest.kt` | 9 个单元测试（含接口契约）                     |
 
 ### 扩展新动作
 
