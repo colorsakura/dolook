@@ -13,17 +13,31 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -36,8 +50,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,6 +69,11 @@ import com.example.dolook.pose.exercise.EmptyExerciseState
 import com.example.dolook.pose.exercise.ExerciseDetector
 import com.example.dolook.pose.exercise.ExerciseState
 import com.example.dolook.pose.exercise.JumpingJackDetector
+import com.example.dolook.ui.components.pressScale
+import com.example.dolook.ui.theme.CameraScrim
+import com.example.dolook.ui.theme.CameraScrimSoft
+import com.example.dolook.ui.theme.DoLookMotion
+import com.example.dolook.ui.theme.LocalReducedMotion
 import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import java.util.concurrent.Executor
@@ -219,35 +243,44 @@ private fun PoseCameraContent(onExit: () -> Unit) {
             modifier = Modifier.fillMaxSize(),
         )
 
-        StatusBar(
+        StatusCard(
             frame = frame,
             exerciseName = detector.name,
+            repetitionCount = exerciseState.repetitionCount,
             exerciseState = exerciseState,
             errorMessage = errorMessage,
             cameraLabel = if (lensFacing == CameraSelector.LENS_FACING_FRONT) "前置" else "后置",
             delegateLabel = helper?.activeDelegate?.let(::delegateLabel) ?: "…",
-            modifier = Modifier.align(Alignment.TopStart),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
         )
 
         Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = 40.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(bottom = 36.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            FilledTonalButton(onClick = onExit) {
-                Text("退出")
-            }
-            FilledTonalButton(
+            CameraControlButton(
+                icon = Icons.Filled.Close,
+                contentDescription = "退出训练",
+                onClick = onExit,
+            )
+            CameraControlButton(
+                icon = Icons.Filled.Refresh,
+                contentDescription = "重置计数",
                 onClick = {
                     detector.reset()
                     exerciseState = EmptyExerciseState
                 },
-            ) {
-                Text("重置计数")
-            }
-            FilledTonalButton(
+            )
+            CameraControlButton(
+                label = if (lensFacing == CameraSelector.LENS_FACING_FRONT) "后置" else "前置",
+                contentDescription = "切换摄像头",
                 onClick = {
                     lensFacing = if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
                         CameraSelector.LENS_FACING_BACK
@@ -255,74 +288,186 @@ private fun PoseCameraContent(onExit: () -> Unit) {
                         CameraSelector.LENS_FACING_FRONT
                     }
                 },
-            ) {
-                Text("切换摄像头")
-            }
+            )
         }
     }
 }
 
+/**
+ * 顶部状态浮层。
+ *
+ * 用半透明材质而非纯色条：既保证在任意画面上文字可读，又不完全遮挡训练画面。
+ * 计数变化时用一次弹起强调「完成一次」这一有意义的时刻，并伴随触觉反馈。
+ */
 @Composable
-private fun StatusBar(
+private fun StatusCard(
     frame: PoseFrame?,
     exerciseName: String,
+    repetitionCount: Int,
     exerciseState: ExerciseState,
     errorMessage: String?,
     cameraLabel: String,
     delegateLabel: String,
     modifier: Modifier = Modifier,
 ) {
+    val reduced = LocalReducedMotion.current
+    val haptics = LocalHapticFeedback.current
+    val countPulse = remember { Animatable(1f) }
+
+    // 因果性 + 节制：只有「完成一次」才触发触觉与弹起，首帧 0 次不触发。
+    LaunchedEffect(repetitionCount) {
+        if (repetitionCount > 0) {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (!reduced) {
+                countPulse.snapTo(1.22f)
+                countPulse.animateTo(1f, DoLookMotion.pop())
+            }
+        }
+    }
+
+    val feedbackColor by animateColorAsState(
+        targetValue = if (exerciseState.isActive) {
+            Color(0xFF30D158)
+        } else {
+            Color.White.copy(alpha = 0.9f)
+        },
+        animationSpec = DoLookMotion.standard(),
+        label = "feedbackColor",
+    )
+
     Surface(
-        color = Color.Black.copy(alpha = 0.45f),
+        color = CameraScrim,
+        shape = RoundedCornerShape(20.dp),
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (errorMessage != null) {
                 Text(
                     text = errorMessage,
-                    color = Color(0xFFFF6B6B),
+                    color = Color(0xFFFF453A),
                     style = MaterialTheme.typography.bodySmall,
                 )
-            } else {
-                val landmarkCount = frame?.result?.landmarks()?.sumOf { it.size } ?: 0
-                val feedbackColor = if (exerciseState.isActive) {
-                    Color(0xFF7CFF7C)
-                } else {
-                    Color.White.copy(alpha = 0.9f)
-                }
+                return@Column
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    text = "$exerciseName · ${exerciseState.repetitionCount} 次 · $cameraLabel · $delegateLabel",
+                    text = exerciseName,
                     color = Color.White,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.titleMedium,
                 )
+                Spacer(modifier = Modifier.weight(1f))
                 Text(
-                    text = exerciseState.feedback,
-                    color = feedbackColor,
-                    fontWeight = FontWeight.Medium,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                val detailText = buildString {
-                    append("关键点: $landmarkCount")
-                    exerciseState.detail?.let { append(" · $it") }
-                    frame?.let { append(" · 推理耗时: ${it.inferenceTimeMs} ms") }
-                }
-                Text(
-                    text = if (frame == null) "正在等待画面…" else detailText,
-                    color = Color.White.copy(alpha = 0.7f),
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "$cameraLabel · $delegateLabel",
+                    color = Color.White.copy(alpha = 0.6f),
+                    style = MaterialTheme.typography.labelMedium,
                 )
             }
+
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = repetitionCount.toString(),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.displaySmall.copy(
+                        // 等宽数字，计数跳动时宽度不抖。
+                        fontFeatureSettings = "tnum",
+                    ),
+                    modifier = Modifier.graphicsLayer {
+                        scaleX = countPulse.value
+                        scaleY = countPulse.value
+                    },
+                )
+                Text(
+                    text = "次",
+                    color = Color.White.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 6.dp, bottom = 4.dp),
+                )
+            }
+
+            Text(
+                text = exerciseState.feedback,
+                color = feedbackColor,
+                fontWeight = FontWeight.Medium,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+
+            val landmarkCount = frame?.result?.landmarks()?.sumOf { it.size } ?: 0
+            val detailText = buildString {
+                append("关键点: $landmarkCount")
+                exerciseState.detail?.let { append(" · $it") }
+                frame?.let { append(" · 推理耗时: ${it.inferenceTimeMs} ms") }
+            }
+            Text(
+                text = if (frame == null) "正在等待画面…" else detailText,
+                color = Color.White.copy(alpha = 0.6f),
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+    }
+}
+
+/**
+ * 相机界面底部的圆形控制按钮。
+ *
+ * 半透明圆形底衬让按钮在任何画面上都清晰，同时不打断画面；按下即缩放并给出触觉。
+ * 切换摄像头按钮直接显示「将切换到的目标」，让操作结果可预期。
+ */
+@Composable
+private fun CameraControlButton(
+    onClick: () -> Unit,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    label: String? = null,
+) {
+    val haptics = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
+
+    Box(
+        modifier = modifier
+            .size(60.dp)
+            .pressScale(interactionSource = interactionSource, pressedScale = 0.9f)
+            .clip(CircleShape)
+            .background(CameraScrimSoft)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onClick()
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = Color.White,
+                modifier = Modifier.size(26.dp),
+            )
+        } else if (label != null) {
+            Text(
+                text = label,
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+            )
         }
     }
 }
 
 @Composable
 private fun PermissionRequest(onRequest: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -330,13 +475,41 @@ private fun PermissionRequest(onRequest: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(36.dp),
+            )
+        }
         Text(
-            text = "需要相机权限才能进行姿态识别",
-            style = MaterialTheme.typography.titleMedium,
+            text = "需要相机权限",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(top = 20.dp),
+        )
+        Text(
+            text = "DoLook 需要访问相机才能进行姿态识别，画面仅在设备本地处理。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
         )
         Button(
             onClick = onRequest,
-            modifier = Modifier.padding(top = 16.dp),
+            modifier = Modifier
+                .padding(top = 24.dp)
+                .pressScale(interactionSource = interactionSource),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+            ),
+            interactionSource = interactionSource,
         ) {
             Text("授予相机权限")
         }

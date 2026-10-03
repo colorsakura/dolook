@@ -1,58 +1,113 @@
 package com.example.dolook.ui.theme
 
-import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.CompositionLocalProvider
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
-
+/**
+ * 浅色配色。基于 Apple 语义化系统色，且每个角色都在浅色下单独调校。
+ */
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
+    primary = BlueLight,
+    onPrimary = SurfaceLight,
+    primaryContainer = BlueContainerLight,
+    onPrimaryContainer = OnBlueContainerLight,
 
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    secondary = GreenLight,
+    onSecondary = SurfaceLight,
+    secondaryContainer = GreenContainerLight,
+    onSecondaryContainer = OnGreenContainerLight,
+
+    tertiary = OrangeLight,
+    onTertiary = SurfaceLight,
+    tertiaryContainer = OrangeContainerLight,
+    onTertiaryContainer = OnOrangeContainerLight,
+
+    error = RedLight,
+    onError = SurfaceLight,
+    errorContainer = RedContainerLight,
+    onErrorContainer = OnRedContainerLight,
+
+    background = BackgroundLight,
+    onBackground = OnSurfaceLight,
+    surface = SurfaceLight,
+    onSurface = OnSurfaceLight,
+    surfaceVariant = SurfaceVariantLight,
+    onSurfaceVariant = OnSurfaceVariantLight,
+    surfaceContainerLowest = SurfaceLight,
+    surfaceContainerLow = SurfaceLight,
+    surfaceContainer = BackgroundLight,
+    surfaceContainerHigh = SurfaceVariantLight,
+    surfaceContainerHighest = SurfaceVariantLight,
+
+    outline = OutlineLight,
+    outlineVariant = OutlineVariantLight,
 )
 
+/** 深色配色。以 OLED 真黑为背景，用 surface 层级区分「浮层材质」。 */
+private val DarkColorScheme = darkColorScheme(
+    primary = BlueDark,
+    onPrimary = SurfaceLight,
+    primaryContainer = BlueContainerDark,
+    onPrimaryContainer = OnBlueContainerDark,
+
+    secondary = GreenDark,
+    onSecondary = SurfaceDark,
+    secondaryContainer = GreenContainerDark,
+    onSecondaryContainer = OnGreenContainerDark,
+
+    tertiary = OrangeDark,
+    onTertiary = SurfaceDark,
+    tertiaryContainer = OrangeContainerDark,
+    onTertiaryContainer = OnOrangeContainerDark,
+
+    error = RedDark,
+    onError = SurfaceLight,
+    errorContainer = RedContainerDark,
+    onErrorContainer = OnRedContainerDark,
+
+    background = BackgroundDark,
+    onBackground = OnSurfaceDark,
+    surface = SurfaceDark,
+    onSurface = OnSurfaceDark,
+    surfaceVariant = SurfaceVariantDark,
+    onSurfaceVariant = OnSurfaceVariantDark,
+    surfaceContainerLowest = BackgroundDark,
+    surfaceContainerLow = SurfaceDark,
+    surfaceContainer = SurfaceVariantDark,
+    surfaceContainerHigh = SurfaceVariantDark,
+    surfaceContainerHighest = SurfaceVariantDark,
+
+    outline = OutlineDark,
+    outlineVariant = OutlineVariantDark,
+)
+
+/**
+ * DoLook 主题。
+ *
+ * 有意关闭 Material You 动态取色：Apple 的「Familiarity / Craft」要求品牌与语义
+ * 颜色稳定可预期，动态取色会让「成功=绿、错误=红」等语义随壁纸漂移。
+ * 如确需跟随壁纸，可将 [dynamicColor] 打开。
+ *
+ * 同时把系统「减弱动效」开关注入 [LocalReducedMotion]，供组件替换位移动画。
+ */
 @Composable
 fun DoLookTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
-    content: @Composable () -> Unit
+    dynamicColor: Boolean = false,
+    content: @Composable () -> Unit,
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val reducedMotion = rememberReducedMotion()
 
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+    CompositionLocalProvider(LocalReducedMotion provides reducedMotion) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content,
+        )
     }
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
 }
